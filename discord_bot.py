@@ -1,124 +1,135 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
+from discord.ui import Modal, TextInput, View, Button
 from github import Github
 import json
-import asyncio
 import os
-from keep_alive import keep_alive  # Importamos el servidor web para Render
+from keep_alive import keep_alive
 
 # ==================== CONFIGURACIÓN ====================
-
-# 1. TOKENS (Se leen desde las Variables de Entorno de Render por seguridad)
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-
-# 2. TU REPOSITORIO
 REPO_NAME = "Di-Innocentis/instancias_black_launcher"
-
-# 3. NOMBRE EXACTO DE LA INSTANCIA (Corregido)
 INSTANCE_NAME_TO_UPDATE = "Pitcharcity Revolution Vol 4"
-
 # =======================================================
 
-# Configuración de permisos de Discord
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# --- CLASE 1: EL FORMULARIO (MODAL) ---
+class WhitelistModal(Modal, title="Solicitud de Acceso"):
+    name_input = TextInput(
+        label="Tu Nickname de Minecraft",
+        placeholder="Escribe aquí tu nombre exacto...",
+        min_length=3,
+        max_length=16,
+        required=True
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        nickname = self.name_input.value
+        user_id = str(interaction.user.id) # Guardamos el ID de Discord
+        
+        # Avisamos que estamos procesando (mensaje efímero, solo lo ve el usuario)
+        await interaction.response.send_message(f"🔄 **Procesando solicitud para:** `{nickname}`...", ephemeral=True)
+
+        try:
+            # 1. Conexión a GitHub
+            g = Github(GITHUB_TOKEN)
+            repo = g.get_repo(REPO_NAME)
+            contents = repo.get_contents("instances.json")
+            json_content = contents.decoded_content.decode("utf-8")
+            data = json.loads(json_content)
+
+            found = False
+            
+            # 2. Lógica de búsqueda y validación
+            for instance in data.get("instances", []):
+                if instance.get("name") == INSTANCE_NAME_TO_UPDATE:
+                    found = True
+                    
+                    # Asegurar que existan las listas
+                    if "whitelist" not in instance: instance["whitelist"] = []
+                    if "claimed_discord_ids" not in instance: instance["claimed_discord_ids"] = []
+
+                    # REGLA: ¿Este usuario de Discord ya pidió whitelist?
+                    if user_id in instance["claimed_discord_ids"]:
+                        await interaction.edit_original_response(content="❌ **Error:** Ya has registrado un usuario anteriormente. Solo se permite una cuenta por persona.")
+                        return
+
+                    # REGLA: ¿El nick ya está ocupado?
+                    if nickname in instance["whitelist"]:
+                        await interaction.edit_original_response(content=f"⚠️ El usuario **{nickname}** ya está en la lista.")
+                        return
+
+                    # SI PASA LAS REGLAS: AGREGAR
+                    instance["whitelist"].append(nickname)
+                    instance["claimed_discord_ids"].append(user_id) # Registramos que este Discord ID ya usó su turno
+                    break
+            
+            if not found:
+                await interaction.edit_original_response(content=f"❌ Error interno: No encontré la instancia '{INSTANCE_NAME_TO_UPDATE}'.")
+                return
+
+            # 3. Subir a GitHub
+            new_json_content = json.dumps(data, indent=4)
+            repo.update_file(
+                path=contents.path, 
+                message=f"Bot: Whitelist {nickname} (Discord: {interaction.user.name})", 
+                content=new_json_content, 
+                sha=contents.sha
+            )
+            
+            await interaction.edit_original_response(content=f"✅ **¡Listo!** Agregado a la whitelist: **{nickname}**\nℹ️ *Reinicia el launcher para entrar.*")
+
+        except Exception as e:
+            await interaction.edit_original_response(content=f"❌ Ocurrió un error: {str(e)}")
+
+# --- CLASE 2: EL BOTÓN (VIEW) ---
+class WhitelistView(View):
+    def __init__(self):
+        super().__init__(timeout=None) # Timeout None para que el botón no deje de funcionar
+
+    @discord.ui.button(label="🔓 Solicitar Whitelist", style=discord.ButtonStyle.green, custom_id="whitelist_btn_v1")
+    async def whitelist_button(self, interaction: discord.Interaction, button: Button):
+        # Al presionar el botón, mostramos el Modal
+        await interaction.response.send_modal(WhitelistModal())
+
+# --- EVENTOS DEL BOT ---
 @bot.event
 async def on_ready():
     print(f'✅ Bot conectado como: {bot.user.name}')
-    print(f'📂 Conectado al repo: {REPO_NAME}')
-    print(f'🎯 Buscando instancia: {INSTANCE_NAME_TO_UPDATE}')
-    print('--- Listo para recibir comandos ---')
+    # Esto hace que el botón siga funcionando si el bot se reinicia
+    bot.add_view(WhitelistView()) 
+    print('--- Sistema de Whitelist Visual Activo ---')
 
 @bot.command()
-async def whitelist(ctx, nickname):
-    """
-    Comando: !whitelist TuNick
-    Agrega el nick al archivo JSON en GitHub.
-    """
+@commands.has_permissions(administrator=True)
+async def setup(ctx):
+    """Comando para crear el panel (Solo admins)"""
+    # Borramos el mensaje del comando para limpieza
+    await ctx.message.delete()
     
-    print(f"📩 Solicitud recibida: {nickname} (por {ctx.author.name})")
+    embed = discord.Embed(
+        title="🛡️ Acceso al Servidor: Pitcharcity Revolution",
+        description=(
+            "Para ingresar al servidor, necesitas registrar tu nickname de Minecraft.\n\n"
+            "**Instrucciones:**\n"
+            "1. Presiona el botón de abajo.\n"
+            "2. Escribe tu nombre de usuario **exacto** en el recuadro.\n"
+            "3. Espera la confirmación.\n\n"
+            "⚠️ **Nota:** Solo puedes registrar una cuenta por usuario de Discord."
+        ),
+        color=0x00ff00
+    )
+    embed.set_thumbnail(url="https://i.imgur.com/TuImagen.png") # Opcional: Pon aquí un link a tu logo
     
-    # Mensaje de carga
-    aviso = await ctx.send(f"🔄 **Procesando...** Verificando acceso para `{nickname}`...")
-    
-    try:
-        # 1. Conexión a GitHub
-        if not GITHUB_TOKEN:
-            await aviso.edit(content="❌ Error fatal: No se encontró el GITHUB_TOKEN en Render.")
-            return
+    view = WhitelistView()
+    await ctx.send(embed=embed, view=view)
 
-        g = Github(GITHUB_TOKEN)
-        repo = g.get_repo(REPO_NAME)
-        
-        # Busca el archivo en la raíz del repo
-        contents = repo.get_contents("instances.json")
-        
-        # 2. Descargar y leer JSON actual
-        json_content = contents.decoded_content.decode("utf-8")
-        data = json.loads(json_content)
-        
-        found = False
-        already_in_list = False
-        
-        # 3. Buscar la instancia correcta y editar la lista
-        for instance in data.get("instances", []):
-            # Compara el nombre de la instancia
-            if instance.get("name") == INSTANCE_NAME_TO_UPDATE:
-                found = True
-                
-                # Crear la lista whitelist si no existe
-                if "whitelist" not in instance:
-                    instance["whitelist"] = []
-                
-                # Verificar si el usuario ya está
-                if nickname in instance["whitelist"]:
-                    already_in_list = True
-                else:
-                    # AGREGAR EL NOMBRE A LA LISTA
-                    instance["whitelist"].append(nickname)
-                break
-        
-        # Manejo de errores lógicos
-        if not found:
-            await aviso.edit(content=f"❌ Error: No encontré la instancia **'{INSTANCE_NAME_TO_UPDATE}'** en tu JSON de GitHub.\nRevisa que el nombre en `instances.json` sea idéntico.")
-            return
-
-        if already_in_list:
-            await aviso.edit(content=f"⚠️ El usuario **{nickname}** ya estaba en la lista de acceso.")
-            return
-
-        # 4. Subir los cambios a GitHub (Commit automático)
-        new_json_content = json.dumps(data, indent=4)
-        repo.update_file(
-            path=contents.path, 
-            message=f"Bot: Whitelist {nickname} (por {ctx.author.name})", 
-            content=new_json_content, 
-            sha=contents.sha
-        )
-        
-        # Confirmación final
-        await aviso.edit(content=f"✅ **{nickname}** ha sido autorizado correctamente en **{INSTANCE_NAME_TO_UPDATE}**.\nℹ️ *Reinicia el launcher para entrar.*")
-        print(f"✅ {nickname} agregado a GitHub con éxito.")
-
-    except Exception as e:
-        error_msg = str(e)
-        if "404" in error_msg:
-            await aviso.edit(content=f"❌ Error 404: No encuentro el archivo **'instances.json'** en el repositorio.")
-        elif "401" in error_msg or "Bad credentials" in error_msg:
-            await aviso.edit(content="❌ Error 401: El token de GitHub en Render no es válido.")
-        else:
-            await aviso.edit(content=f"❌ Error interno: {error_msg}")
-        
-        print(f"❌ Error crítico: {e}")
-
-# --- MANTENER VIVO EN RENDER ---
+# --- ARRANQUE ---
 keep_alive()
-
-# Arrancar el bot
 if DISCORD_TOKEN:
     bot.run(DISCORD_TOKEN)
-else:
-    print("❌ Error: No se encontró el DISCORD_TOKEN en las variables de entorno.")
