@@ -120,7 +120,7 @@ async def setup(ctx):
             "1. Presiona el botón de abajo.\n"
             "2. Escribe tu nombre de usuario **exacto** en el recuadro.\n"
             "3. Espera la confirmación.\n\n"
-            "⚠️ **Nota:** Solo puedes registrar una cuenta por usuario de Discord."
+            "⚠️ **Nota:** Solo puedes registrar una cuenta por usuario de Discord no se vale tener dos cuentas de discord oyo litersh escucho Wolfsito xddd."
         ),
         color=0x00ff00
     )
@@ -133,3 +133,4 @@ async def setup(ctx):
 keep_alive()
 if DISCORD_TOKEN:
     bot.run(DISCORD_TOKEN)
+
