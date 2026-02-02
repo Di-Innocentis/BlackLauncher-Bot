@@ -11,7 +11,7 @@ from keep_alive import keep_alive
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 REPO_NAME = "Di-Innocentis/instancias_black_launcher"
-INSTANCE_NAME_TO_UPDATE = "Pitcharcity Revolution Vol 4"
+INSTANCE_NAME_TO_UPDATE = "Pitcharcity Magic Adventure"
 # =======================================================
 
 intents = discord.Intents.default()
@@ -113,14 +113,14 @@ async def setup(ctx):
     await ctx.message.delete()
     
     embed = discord.Embed(
-        title="🛡️ Acceso al Servidor: Pitcharcity Revolution",
+        title="🛡️ Acceso al Servidor: Pitcharcity Magic Adventure",
         description=(
             "Para ingresar al servidor, necesitas registrar tu nickname de Minecraft.\n\n"
             "**Instrucciones:**\n"
             "1. Presiona el botón de abajo.\n"
             "2. Escribe tu nombre de usuario **exacto** en el recuadro.\n"
             "3. Espera la confirmación.\n\n"
-            "⚠️ **Nota:** Solo puedes registrar una cuenta por usuario de Discord no se vale tener dos cuentas de discord oyo litersh escucho Wolfsito xddd."
+            "⚠️ **Nota:** Solo puedes registrar una cuenta por usuario de Discord no se vale tener dos cuentas de discord escucho litersh, escucho Wolfsito xddd."
         ),
         color=0x00ff00
     )
@@ -133,4 +133,5 @@ async def setup(ctx):
 keep_alive()
 if DISCORD_TOKEN:
     bot.run(DISCORD_TOKEN)
+
 
